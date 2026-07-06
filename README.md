@@ -31,11 +31,6 @@ The workspace is structured into specialized modules to separate data preparatio
 
 
 ```
-
-```text
-File README.md successfully created.
-
-```text
 ├── Dataset/                      # Raw image data in COCO format (exported from Roboflow)
 │   └── _annotations.coco.json    # Object detection bounding box and metadata file
 ├── train/                        # Directory for training split images (70%)
