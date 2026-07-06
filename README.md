@@ -12,42 +12,40 @@
 ## 📝 Descripción del Proyecto
 Este proyecto aborda la complejidad de la vigilancia entomológica manual del mosquito transmisor del dengue (*Aedes aegypti*). Actualmente, el proceso de conteo de huevos depositados en paletas recolectoras (ovitrampas) es lento, agotador y propenso a errores humanos, además de requerir equipos costosos como microscopios.
 
-Para solucionar esta problemática, este repositorio contiene una solución basada en **Visión Computacional y Deep Learning** que automatiza el conteo de huevos y clasifica la infestación según el **Índice de Densidad de Huevos (IDH)** establecido por el Ministerio de Salud del Perú (MINSA): Bajo, Medio, Alto y Muy Alto.
+Para solucionar esta problemática, este repositorio contiene una solución modular basada en **Visión Computacional y Deep Learning** implementada en **PyTorch** y **TensorFlow/Keras** que automatiza el conteo de huevos mediante regresión directa y clasifica el nivel de infestación según el **Índice de Densidad de Huevos (IDH)** alineado con los criterios del Ministerio de Salud del Perú (MINSA): Bajo, Medio, Alto y Muy Alto.
+
+---
 
 ## 🎯 Objetivos
-* **Objetivo General:** Comparar el desempeño de tres arquitecturas CNN con transfer learning (ResNet-50, InceptionV3 y EfficientNet-B3) para el conteo de huevos de *Aedes aegypti* y su clasificación según el riesgo epidemiológico (IDH).
+* **Objetivo General:** Comparar el desempeño de tres arquitecturas CNN con transfer learning (*ResNet-50*, *InceptionV3* y *EfficientNet-B3*) para el conteo automatizado de huevos de *Aedes aegypti* y su posterior mapeo al riesgo epidemiológico (IDH).
 * **Objetivos Específicos:**
-  * Preprocesar y adaptar un dataset de imágenes de ovitrampas (de un laboratorio brasileño) utilizando técnicas de aumento de datos (*Data Augmentation*) para evitar el sobreajuste.
-  * Entrenar los modelos empleando *fine-tuning* con una capa de regresión adaptada.
-  * Evaluar el desempeño utilizando métricas de regresión numéricas (MAE, RMSE, MdAE) y matrices de confusión para validar el riesgo epidemiológico.
-  * Identificar el modelo más eficiente y adecuado para su implementación en zonas de escasos recursos.
+  * Preprocesar y adaptar un dataset de imágenes de ovitrampas utilizando técnicas de aumento de datos en línea (*Online Data Augmentation*) para evitar el sobreajuste.
+  * Diseñar e implementar un esquema de entrenamiento en dos fases (*Freeze & Fine-tuning*) acoplando una cabeza de regresión lineal con activación ReLU final.
+  * Evaluar rigurosamente la estabilidad de los modelos mediante múltiples iteraciones estadísticas usando métricas numéricas (MAE, RMSE, MdAE) y matrices de confusión sanitarias.
+  * Identificar el modelo con mayor balance entre consistencia matemática y robustez operativa para su despliegue en entornos de vigilancia real.
 
 ---
 
-## 🧠 Arquitecturas Evaluadas
-Se aplicó *Transfer Learning* sobre tres modelos preentrenados, adaptando su última capa para la tarea de regresión (conteo continuo) y mapeando luego dichos resultados a umbrales ordinales (IDH).
-1. **ResNet-50**
-2. **InceptionV3**
-3. **EfficientNet-B3**
+## 📂 Estructura del Repositorio
+Basado en la organización del código fuente, el proyecto está estructurado de la siguiente manera:
 
----
-
-## 📊 Resultados Principales
-El análisis comparativo arrojó las siguientes conclusiones determinantes:
-* ❌ **InceptionV3:** Resultó ser el modelo más inestable del estudio, presentando un Error Absoluto Medio (MAE) de **24.78** y subestimando drásticamente densidades altas.
-* ⚖️ **ResNet-50:** Obtuvo el menor error global estándar, alcanzando un MAE de **14.12**, lo que lo hace muy consistente en densidades bajas y medias.
-* 🏆 **EfficientNet-B3 (Mejor Modelo):** Demostró superioridad técnica y clínica frente a las densidades críticas (clústeres masivos de huevos). En escenarios extremos (ej. solapamiento real de 382 huevos), EfficientNet logró predecir 339 huevos, mostrando el mejor balance operativo. 
-
-**Validación Epidemiológica:** Las desviaciones matemáticas de EfficientNet-B3 ocurren exclusivamente entre categorías de IDH adyacentes (ej. de Medio a Bajo), evitando **falsos negativos extremos** (ej. de Muy Alto a Bajo). Esto garantiza que, operativamente, el sistema detone las alertas epidemiológicas correctas sin comprometer la salud pública.
-
----
-
-## 💻 Requisitos e Instalación
-
-```bash
-# Clonar este repositorio
-git clone [https://github.com/darkJCdark/cnn-ordinal-classifier-egg-ovitrap](https://github.com/darkJCdark/cnn-ordinal-classifier-egg-ovitrap)
-cd repo-aedes-aegypti
-
-# Crear entorno virtual e instalar dependencias
-pip install -r requirements.txt
+```text
+├── Dataset/                      # Dataset original en formato COCO exportado de Roboflow
+│   └── _annotations.coco.json    # Archivo de anotaciones JSON
+├── train/                        # Imágenes destinadas al entrenamiento (70%)
+├── valid/                        # Imágenes destinadas a la validación (20%)
+├── test/                         # Imágenes destinadas a la prueba final (10%)
+├── prepro.py                     # Carga de datos, división aleatoria y Data Augmentation Online
+├── modelos.py                    # Definición de la arquitectura unificada y control de capas congeladas
+├── entrenamiento.py              # Lógica del bucle de entrenamiento (2 Fases), Huber Loss e IDH
+├── main.py                       # Punto de entrada para entrenar/evaluar los 3 modelos (5 iteraciones)
+├── analisis_comparativo.py       # Post-procesamiento y generación automática de gráficos estadísticos
+├── estructura.txt                # Registro detallado de la jerarquía de archivos
+└── resultados/                   # Almacenamiento de logs, pesos y gráficos generados
+    ├── resultados_metricas.csv   # Tabla consolidada con el MAE/RMSE/MdAE de todas las corridas
+    ├── predicciones_<modelo>.csv # Predicciones detalladas de la última iteración
+    ├── pesos_<modelo>.pth        # Pesos guardados del mejor estado de cada arquitectura
+    └── Metricas/                 # Carpeta visual con los resultados gráficos
+        ├── Boxplot-ALL.png       # Boxplot comparativo global entre las 3 redes
+        ├── Boxplot-<MODELO>.png  # Variabilidad interna por métrica de cada arquitectura
+        └── Real-Predicho_Matriz-de-Confusion_<MODELO>.png
