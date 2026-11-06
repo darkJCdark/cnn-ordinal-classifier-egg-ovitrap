@@ -12,7 +12,11 @@
 ## 📝 Project Description
 This repository contains a modular deep learning framework implemented in **PyTorch** designed to automate entomological surveillance for dengue vector control. Traditionally, the quantification of *Aedes aegypti* eggs deposited on wooden ovitrap paddles is conducted manually by public health technicians. This process is highly labor-intensive, slow, prone to fatigue-induced human error, and dependent on specialized laboratory hardware (microscopes).
 
-To optimize this critical task, this project presents an automated computer vision solution that counts eggs via direct regression and translates these numbers into actionable epidemiological risk categories based on the **Egg Density Index (IDH / EDI)** framework set by the Ministry of Health of Peru (MINSA): **Low, Medium, High, and Very High**.
+To optimize this critical task, this project presents an automated computer vision solution that counts eggs via direct regression and translates these numbers into four project-defined risk categories: **Low, Medium, High, and Very High**. These categories are inspired by, but are not, the official **Egg Density Index (IDH)** of the Ministry of Health of Peru (MINSA), which is computed as total eggs over positive ovitraps in an area (see [Post-Hoc Risk Mapping](#post-hoc-risk-mapping)).
+
+**Data source:** the 247 images (12,507 annotated eggs) in `Dataset/` are a working copy of the public-domain set published with Vicente et al. (2025, [doi:10.22456/2175-2745.143494](https://doi.org/10.22456/2175-2745.143494)). All were taken with a laboratory stereomicroscope, and the set combines field-collected and laboratory-reared eggs.
+
+**About `docs/Informe.pdf`:** it is the original course report (Inteligencia Artificial Aplicada, 1INF62). Its preference for EfficientNet-B3, its attribution of the thresholds to MINSA and its mention of MSE loss are superseded by this README and by the results in `resultados/`.
 
 ---
 
@@ -39,9 +43,9 @@ The workspace is structured into specialized modules to separate data preparatio
 ├── prepro.py                     # Metadata parser, dataset partitioner, and Online Augmentation
 ├── modelos.py                    # Unified network factory with structural regression heads
 ├── entrenamiento.py              # Two-phase training loops, Huber Loss criteria, and evaluation logic
-├── main.py                       # Experimental orchestrator (executes 5 cross-validation runs per network)
+├── main.py                       # Experimental orchestrator (executes 5 independent training runs per network)
 ├── analisis_comparativo.py       # Post-processing analytics script (offline plotting and metric aggregation)
-├── estructura.txt                # Repository file layout descriptor
+├── analisis_umbrales_minsa.py    # Re-maps the final-run predictions to MINSA's bands and runs Welch tests
 └── resultados/                   # Directory for training artifacts, logs, and graphics
     ├── resultados_metricas.csv   # Aggregated evaluation metrics for all 15 experimental runs
     ├── predicciones_<model>.csv  # Per-sample predictions from the final execution run
@@ -49,7 +53,7 @@ The workspace is structured into specialized modules to separate data preparatio
     └── Metricas/                 # Visual reporting folder
         ├── Boxplot-ALL.png       # Comparative boxplot illustrating model error distributions
         ├── Boxplot-<model>.png   # Metric variance charts per individual architecture
-        └── Real-Predicho_Matriz-de-Confusion_<model>.png # Scatter plots and IDH confusion matrices
+        └── Real-Predicho_Matriz-de-Confusion_<model>.png # Scatter plots and risk-category confusion matrices
 
 ```
 
@@ -66,21 +70,21 @@ The project implements a streamlined, fully automated pipeline that transitions 
  [ Statistical Evaluation ] <── [ Preprocessing & Online Augmentation ]
             │                               │
             ▼                               ▼
- [ IDH Confusion Matrices ] <── [ Two-Phase Training (Huber Loss) ]
+ [ Risk Confusion Matrices ] <── [ Two-Phase Training (Huber Loss) ]
 
 ```
 
 ### 1. Data Ingestion & Partitioning (`prepro.py`)
 
 * **Metadata Parsing:** The script ingests `_annotations.coco.json`, mapping each image identifier to its corresponding ground-truth egg count $N$ by aggregating its bounding box instances.
-* **Proportional Splitting:** Images are stratified and split into **Training (70%)**, **Validation (20%)**, and **Testing (10%)** sets. Crucially, the data partitioning is decoupled from the data loaders and fixed using a constant random seed (`SEED = 42`) to ensure that all models are exposed to the exact same data distributions.
+* **Proportional Splitting:** Images are randomly split into **Training (70%)**, **Validation (20%)**, and **Testing (10%)** sets. Crucially, the data partitioning is decoupled from the data loaders and fixed using a constant random seed (`SEED = 42`) to ensure that all models are exposed to the exact same data distributions.
 
 ### 2. On-the-Fly Tensor Augmentation (`prepro.py`)
 
 To ensure robustness against variations in field capture environments (illumination shifts, varying camera sensors, structural noise on paddles), the training data loader applies **Online Data Augmentation** at the tensor level using `torchvision.transforms`:
 
 * **Spatial Transformations:** Random horizontal and vertical flips combined with a random rotation of $\pm20^\circ$.
-* **Photometric Alterations:** Color jittering (*ColorJitter*) modifying brightness, contrast, saturation, and hue by $\pm15\%$.
+* **Photometric Alterations:** Color jittering (*ColorJitter*) modifying brightness and contrast by $\pm15\%$.
 * **Scale Invariance:** Random cropping to force features to be location-independent.
 * **Standardized Normalization:** Pixel arrays are scaled and normalized utilizing the strict ImageNet channel-wise distribution parameters:
 
@@ -109,7 +113,7 @@ Training is structured into two distinct operational phases to avoid devastating
 
 ### 5. Robust Optimization: Huber Loss Criteria
 
-The dataset exhibits extreme skewness: while the median count is ~17 eggs, peak dense samples contain massive clusters reaching up to ~500 eggs. Optimizing with standard Mean Squared Error (MSE) forces the networks to generate massive gradients on high-density outliers, destroying the model's accuracy on low-to-medium ranges. To mitigate this, **Huber Loss** is implemented:
+The dataset exhibits extreme skewness: the median count is 18 eggs, while the densest sample reaches 543 eggs. Optimizing with standard Mean Squared Error (MSE) forces the networks to generate massive gradients on high-density outliers, destroying the model's accuracy on low-to-medium ranges. To mitigate this, **Huber Loss** is implemented:
 
 
 $$L_{\delta}(N, \hat{N}) = \begin{cases} 
@@ -122,26 +126,34 @@ Set at $\delta = 1.0$, it penalizes small errors quadratically (like MSE) and ex
 
 ---
 
-## 📊 Comparative Results & Epidemiological Validation
+## 📊 Comparative Results
 
 To measure structural stability against weight initialization, the orchestration script `main.py` performs **5 complete, independent training iterations** for each architecture.
 
-The consolidated cross-validation results demonstrate key architectural differences:
+Over these five runs on a single fixed split (70/20/10), the test-set results show key architectural differences:
 
-* ❌ **InceptionV3:** Exhibited high instability and poor error metrics, yielding a global Mean Absolute Error (MAE) of **24.78** eggs and systematically underestimating dense clusters.
-* ⚖️ **ResNet-50:** Showed highly consistent and balanced behavior on low-to-moderate counts, securing a standard global MAE of **14.12** eggs.
-* 🏆 **EfficientNet-B3 (Top Performer):** Demonstrated superior mathematical and clinical performance, particularly within extreme density scenarios. In test instances containing massive overlapping clusters (e.g., ground truth of 382 eggs), EfficientNet-B3 successfully predicted 339 eggs.
+* ❌ **InceptionV3:** Highest mean error and widest MAE and RMSE dispersion (MAE **24.78 ± 3.77** eggs), with the largest undercount on the densest test image (133 of 382 eggs).
+* 🏆 **ResNet-50 (best balance):** Lowest error on all three metrics (MAE **14.12 ± 1.73**, RMSE **25.58 ± 3.60**, MdAE **4.91 ± 1.60**) and the highest category accuracy in the final run (80.8%, tied with InceptionV3).
+* ⚖️ **EfficientNet-B3:** Intermediate error (MAE **16.98 ± 2.33**). It came closest on the densest test image (339 of 382 eggs) but had the lowest category accuracy (69.2%) and underestimated the risk category most often (8 of 26 images).
 
-### Post-Hoc Ordinal IDH Mapping
+### Post-Hoc Risk Mapping
 
-Continuous network outputs are mapped into discrete health alert thresholds post-evaluation using MINSA's standardized parameters:
+Continuous network outputs are mapped into four categories post-evaluation using the project's operating thresholds:
 
 * **Low (Bajo):** $\hat{N} < 10$ eggs.
 * **Medium (Medio):** $10 \le \hat{N} < 50$ eggs.
 * **High (Alto):** $50 \le \hat{N} < 100$ eggs.
 * **Very High (Muy Alto):** $\hat{N} \ge 100$ eggs.
 
-**Public Health Safeguards:** Confusion matrix analytics confirmed that the predictive errors of **EfficientNet-B3** occur exclusively between **adjacent risk categories** (e.g., misclassifying a 'Medium' paddle as 'Low'). Crucially, the model completely eliminated extreme false negatives (e.g., misclassifying a 'Very High' risk zone as 'Low'). This ensures that public health systems can dependably trigger containment protocols and vector control alerts without endangering vulnerable communities.
+**Scope of these thresholds:** they are not MINSA's. MINSA's protocol (PSU N° 11, R.M. N° 010-2015/MINSA, 2016) defines the IDH as total eggs over positive ovitraps in an area, with bands at 5, 20 and 40, and sets per-ovitrap hotspot bands at 60, 120 and 150. Re-mapping the same final-run predictions with `analisis_umbrales_minsa.py` (taking each image as one positive ovitrap, an approximation) gives:
+
+| Thresholds (accuracy · underestimated · non-adjacent errors) | ResNet-50 | InceptionV3 | EfficientNet-B3 |
+|---|---|---|---|
+| Project, 10/50/100 | 80.8% · 4 · 0 | 80.8% · 1 · 0 | 69.2% · 8 · 0 |
+| MINSA IDH bands, 5/20/40 | 80.8% · 3 · 0 | 65.4% · 5 · 0 | 53.8% · 11 · 2 |
+| MINSA hotspot bands, 60/120/150 | 88.5% · 3 · 0 | 80.8% · 5 · 2 | 84.6% · 4 · 1 |
+
+ResNet-50 remains the most accurate, but the absence of non-adjacent errors depends on the thresholds. This is an academic prototype with preliminary results; it does not replace official counts.
 
 ---
 
@@ -172,7 +184,7 @@ pip install opencv-python-headless pillow numpy matplotlib pandas seaborn scikit
 
 The execution pipeline is split into two independent stages to isolate resource-heavy model computation from downstream graphic report rendering:
 
-1. **Massive Model Training & Cross-Validation:**
+1. **Model Training (5 independent runs per architecture):**
 Executes the full orchestration sequence, running 5 independent training routines for all three models sequentially. Weights, loss track logs, and continuous testing predictions are exported directly to `resultados/`.
 ```bash
 python main.py
@@ -181,8 +193,16 @@ python main.py
 
 
 2. **Offline Statistical Report Generation:**
-Reads the saved metrics files locally (operates instantly on CPU without requiring PyTorch or GPU resources) to compute averages, plot comparative boxplots, draw prediction-vs-ground-truth scatter curves, and render IDH matrices.
+Reads the saved metrics files locally (operates instantly on CPU without requiring PyTorch or GPU resources) to compute averages, plot comparative boxplots, draw prediction-vs-ground-truth scatter curves, and render risk-category confusion matrices.
 ```bash
 python analisis_comparativo.py
+
+```
+
+
+3. **Threshold Sensitivity Analysis:**
+Re-maps the final-run predictions to MINSA's bands and compares ResNet-50 with EfficientNet-B3 using Welch's t-test. It only reads the CSV files in `resultados/`.
+```bash
+python analisis_umbrales_minsa.py
 
 ```
