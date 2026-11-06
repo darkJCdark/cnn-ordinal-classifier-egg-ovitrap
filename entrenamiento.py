@@ -4,7 +4,7 @@ entrenamiento.py
 ================
 Bucle de entrenamiento en 2 fases (cabeza congelada -> fine-tuning del
 último tercio del encoder, con early stopping) y evaluación final
-(MAE / RMSE / MdAE + clasificación IDH según los rangos del MINSA).
+(MAE / RMSE / MdAE + categorías de riesgo con los umbrales operativos del proyecto).
 
 El modelo (ver modelos.py) predice el conteo crudo N̂ directamente
 (cabeza = Linear + ReLU final, sin Dropout, sin log1p), igual que la
@@ -39,7 +39,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from modelos import crear_modelo
 
 # ---------------------------------------------------------------------------
-# Umbrales IDH (MINSA) -- AJUSTAR con los valores exactos de la norma técnica
+# Umbrales operativos del proyecto; NO son los del IDH del MINSA (ver README y
+# analisis_umbrales_minsa.py)
 # ---------------------------------------------------------------------------
 TAU1, TAU2, TAU3 = 10, 50, 100  # Bajo < TAU1 <= Medio < TAU2 <= Alto < TAU3 <= Muy Alto
 
